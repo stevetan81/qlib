@@ -1,0 +1,53 @@
+# HATS Qlib 预测配置
+# 用于全市场股票的每日预测
+
+qlib_init:
+    provider_uri: "/home/tanlu/myworkspace/HATS/data/qlib_export/cn"
+    region: cn
+
+# 预测范围：全市场
+market: &market all
+
+# 数据处理配置 (与训练保持一致)
+data_handler_config: &data_handler_config
+    start_time: 2020-01-01
+    end_time: 2026-12-31
+    instruments: *market
+    infer_processors:
+        - class: RobustZScoreNorm
+          kwargs:
+              fields_group: feature
+              clip_outlier: true
+        - class: Fillna
+          kwargs:
+              fields_group: feature
+    # 预测时不需要 label
+    label: []
+
+# 数据集配置
+dataset_config: &dataset_config
+    class: DatasetH
+    module_path: qlib.data.dataset
+    kwargs:
+        handler:
+            class: Alpha158
+            module_path: qlib.contrib.data.handler
+            kwargs: *data_handler_config
+        segments:
+            predict: [2026-01-01, 2026-12-31]
+
+# 模型路径 (使用 current 软链接指向最新模型)
+model_path: "/home/tanlu/myworkspace/qlib/hats_workflows/models/current"
+
+# 输出配置
+output:
+    path: "/home/tanlu/myworkspace/HATS/data/predictions"
+    format: csv
+    filename_pattern: "pred_{date}.csv"
+
+# 预测字段
+prediction_fields:
+    - datetime      # 预测日期
+    - instrument    # 股票代码
+    - score         # 预测分数
+    - rank          # 排名
