@@ -1,200 +1,216 @@
 # HATS Qlib Workflows
 
-HATS 量化模型训练和预测工作流，基于 Qlib 框架。
+A 股短线波段策略（持股 1-10 天）量化模型研究与生产工作流，基于 Qlib 框架。
+
+## 当前最优配置
+
+| 项目 | 值 |
+|------|-----|
+| 方法 | Rolling Retrain（滚动训练） |
+| 模型 | DoubleEnsemble（6 个 LightGBM 子模型，样本重加权+特征选择） |
+| 特征 | Qlib Alpha158（内置 158 因子） |
+| 股票池 | CSI500 动态成分（`csi500_dyn`） |
+| 预测周期 | T+5（5 个交易日） |
+| 滚动步长 | 20 个交易日 |
+| 回测策略 | TopkDropout（Top8, 每日换 1 只） |
+| 基准指数 | SH000905（中证 500） |
+
+### 关键指标（Rolling Retrain, 测试期 2025-01 ~ 2026-01）
+
+| 指标 | 值 |
+|------|-----|
+| Rank IC | 0.0469 |
+| Rank ICIR | 0.4907 |
+| 年化超额收益（含成本） | 12.2% |
+| 信息比率 | 1.48 |
+| 最大回撤 | -9.4% |
 
 ## 目录结构
 
 ```
 hats_workflows/
-├── config_train.yaml      # 训练配置 (CSI1000 + LightGBM)
-├── config_predict.yaml    # 预测配置 (全市场)
-├── run_workflow.py        # 工作流入口脚本
-├── models/                # 模型存储目录
-│   └── current -> lgbm_csi1000_YYYYMMDD.pkl  # 当前模型软链接
-└── README.md
+├── EXPERIMENT_LOG.md                              # 完整实验记录（Phase 0-11）
+├── rolling_benchmark.py                           # Rolling Retrain 入口（主力）
+├── run_workflow.py                                # 静态训练/预测入口
+├── custom_handler.py                              # Alpha158PlusCustom handler（164 因子）
+├── ddgda_workflow.py                              # DDG-DA 元学习入口（需 >=48GB）
+├── signal_duckdb_pipeline.py                      # 信号落库 & 对账管道
+├── auto_signal_scheduler.py                       # 自动化调度（本仓库副本）
+├── topk_grid_search.py                            # TopK 参数网格搜索
+│
+├── config_train.yaml                              # 静态训练配置（CSI1000, LightGBM）
+├── config_train_csi500_dyn.yaml                   # 静态训练配置（CSI500 动态）
+├── config_predict.yaml                            # 全市场预测配置
+├── benchmark_csi1000.yaml                         # CSI1000 基准配置
+├── benchmark_signal_only.yaml                     # 信号评估配置
+│
+├── workflow_config_rolling_double_ensemble.yaml    # Rolling DE（静态池）
+├── workflow_config_rolling_double_ensemble_dyn.yaml       # Rolling DE（动态池）★推荐
+├── workflow_config_rolling_double_ensemble_dyn_deploy.yaml # Rolling DE 生产部署配置
+├── workflow_config_rolling_de_164.yaml             # Rolling DE + 164 因子
+├── workflow_config_rolling_de_164_dyn.yaml         # Rolling DE + 164 因子（动态池）
+├── workflow_config_rolling_lgbm.yaml               # Rolling LightGBM
+├── workflow_config_rolling_lgbm_dyn.yaml           # Rolling LightGBM（动态池）
+├── workflow_config_rolling_xgboost.yaml            # Rolling XGBoost
+├── workflow_config_rolling_xgboost_dyn.yaml        # Rolling XGBoost（动态池）
+├── workflow_config_rolling_linear.yaml             # Rolling Linear
+├── workflow_config_rolling_linear_dyn.yaml         # Rolling Linear（动态池）
+│
+├── configs/                                       # Phase 1 实验配置
+│   ├── phase1_lgbm_label_t{1,3,5,10}[_dyn].yaml  # Label horizon 扫描
+│   ├── phase1_lgbm_alpha158_plus.yaml             # Alpha158 + 自定义因子
+│   ├── phase1_best_combined.yaml                  # 最优组合
+│   └── phase2_rr_de_dyn_deploy_start_20251103.yaml # Phase 2 部署配置
+│
+└── models/                                        # 模型存储（gitignore）
+    └── current -> *.pkl
 ```
 
-## 数据流
+## 数据源
 
 ```
-HATS DuckDB (raw data)
-    ↓
-scripts/extract_qlib_data.py (前复权 + normalize)
-    ↓
-Qlib binary format (~/.qlib/qlib_data 或 HATS/data/qlib_export/cn)
-    ↓
-run_workflow.py --mode train (CSI1000 训练)
-    ↓
-models/lgbm_csi1000_YYYYMMDD.pkl
-    ↓
-run_workflow.py --mode predict (全市场预测)
-    ↓
-HATS/data/predictions/pred_YYYYMMDD.csv
-    ↓
-HATS scripts/qlib_import_predictions.py (导入 DuckDB)
+/home/tanlu/myworkspace/HATS/data/qlib_export/cn/qlib_bin/
+├── calendars/day.txt       # 交易日历（2010-01-04 ~ 持续更新）
+├── instruments/
+│   ├── all.txt             # 全市场 ~5,187 只
+│   ├── csi300.txt          # 沪深 300
+│   ├── csi500.txt          # 中证 500（静态，有幸存者偏差）
+│   ├── csi500_dyn.txt      # 中证 500 动态成分 ★推荐
+│   └── csi1000.txt         # 中证 1000
+└── features/               # 5,191 个股票目录（OHLCV + 自定义 alpha）
 ```
+
+可用特征：
+- **基础行情**: open, high, low, close, volume, vwap
+- **自定义 alpha**（预计算，尚未用于主实验）: alpha_adx_trend, alpha_boll_position, alpha_cci_extreme, alpha_macd_hist, alpha_rsi_divergence, alpha_winner_rate
 
 ## 使用方法
 
-### 训练模型
+### Rolling Retrain（推荐）
+
+所有 Rolling 实验**必须从 `/tmp` 运行**，避免 qlib 源码导入冲突。
 
 ```bash
-# 使用默认配置训练
-python run_workflow.py --mode train
+# DoubleEnsemble Rolling（当前最优）
+cd /tmp && python /home/tanlu/myworkspace/qlib/hats_workflows/rolling_benchmark.py \
+  --conf_path=/home/tanlu/myworkspace/qlib/hats_workflows/workflow_config_rolling_double_ensemble_dyn.yaml \
+  --horizon=5 --step=20 run
 
-# 使用自定义配置
-python run_workflow.py --mode train --config /path/to/config.yaml
+# LightGBM Rolling
+cd /tmp && python /home/tanlu/myworkspace/qlib/hats_workflows/rolling_benchmark.py \
+  --conf_path=/home/tanlu/myworkspace/qlib/hats_workflows/workflow_config_rolling_lgbm_dyn.yaml \
+  --horizon=5 --step=20 run
+
+# XGBoost Rolling
+cd /tmp && python /home/tanlu/myworkspace/qlib/hats_workflows/rolling_benchmark.py \
+  --conf_path=/home/tanlu/myworkspace/qlib/hats_workflows/workflow_config_rolling_xgboost_dyn.yaml \
+  --horizon=5 --step=20 run
 ```
 
-训练完成后：
-- 模型保存到 `models/lgbm_csi1000_YYYYMMDD.pkl`
-- `models/current` 软链接指向最新模型
-- 输出 Rank IC 指标
-
-### 预测
+### 静态训练（仅用于快速验证）
 
 ```bash
-# 预测今天
-python run_workflow.py --mode predict
+# CSI500 动态池训练
+python hats_workflows/run_workflow.py --mode train \
+  --config hats_workflows/config_train_csi500_dyn.yaml
 
-# 预测指定日期
-python run_workflow.py --mode predict --date 2026-01-30
+# 全市场预测
+python hats_workflows/run_workflow.py --mode predict --date 2026-02-13
 ```
 
-预测结果：
-- 输出到 `HATS/data/predictions/pred_YYYYMMDD.csv`
-- 包含 datetime, instrument, score, rank 列
+## 生产部署架构
 
-## 配置说明
-
-### config_train.yaml
-
-| 参数 | 说明 |
-|------|------|
-| `market` | 训练范围: csi1000 |
-| `segments.train` | 训练集: 2020-01-01 ~ 2024-12-31 |
-| `segments.valid` | 验证集: 2025-01-01 ~ 2025-06-30 |
-| `segments.test` | 测试集: 2025-07-01 ~ 当前 |
-| `model_config` | LightGBM 超参数 (已优化) |
-
-### config_predict.yaml
-
-| 参数 | 说明 |
-|------|------|
-| `market` | 预测范围: all (全市场) |
-| `model_path` | 模型路径: `HATS/models/qlib_deployed_current.pkl` |
-| `output.path` | 输出目录: HATS/data/predictions |
-
-## 与 HATS 集成
-
-### 日常流程 (每日 16:00)
-
-```bash
-# 1. 同步数据到 DuckDB
-python scripts/daily_sync.py
-
-# 2. 导出 Qlib 格式
-python scripts/extract_qlib_data.py
-
-# 3. 运行预测
-cd /home/tanlu/myworkspace/qlib
-python hats_workflows/run_workflow.py --mode predict
-
-# 4. 导入预测结果
-cd /home/tanlu/myworkspace/HATS
-python scripts/qlib_import_predictions.py
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Cron 定时任务（Asia/Shanghai 时区）                           │
+├──────────────────────────────────────────────────────────────┤
+│  19:00  daily_sync.py          DuckDB 行情同步               │
+│  20:30  daily_sync.py          筹码绩效同步                   │
+│  21:30  daily_sync.py          技术因子同步                   │
+│  22:00  daily_qlib_update.py   Qlib 二进制数据更新            │
+│  19:40  daily_signal_scheduler.py run-daily    每日预测+落库  │
+│  20:10  daily_signal_scheduler.py run-reconcile 对账          │
+│  每月首个周六 20:30  run-retrain-deploy  DoubleEnsemble 重训  │
+└──────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────┐
+│  DuckDB（HATS/data/cn/raw/tushare.duckdb）│
+│  ├── qlib_predictions  每日预测分数       │
+│  ├── qlib_orders       BUY/SELL 信号      │
+│  ├── qlib_executions   券商成交回报       │
+│  └── qlib_reconcile    信号 vs 成交对账   │
+└─────────────────────────────────────────┘
+         │
+         ▼
+   HATS/models/qlib_deployed_current.pkl
+   (当前: doubleensemble_csi500_dyn_20260214)
 ```
 
-### DuckDB 信号落库与实盘对账
-
-如果你希望把每日信号直接放进 DuckDB，并分析“预测/信号”和“实盘成交”差异，可使用：
+### Cron 管理
 
 ```bash
-# 1) 预测结果落库，并生成次日开盘 orders_YYYYMMDD.csv
-python hats_workflows/signal_duckdb_pipeline.py \
-  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
-  ingest-pred \
-  --pred-csv /home/tanlu/myworkspace/HATS/data/predictions/pred_20260210.csv \
-  --model-name de_h5_s20_open_topk8 \
-  --topk 8 \
-  --n-drop 1
-```
-
-```bash
-# 2) 回写券商成交数据（CSV）到 DuckDB
-python hats_workflows/signal_duckdb_pipeline.py \
-  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
-  import-exec \
-  --exec-csv /path/to/broker_executions_20260211.csv \
-  --broker-name broker_a
-```
-
-```bash
-# 3) 对账：输出“计划信号 vs 实际成交”差异明细
-python hats_workflows/signal_duckdb_pipeline.py \
-  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
-  reconcile \
-  --trade-date 2026-02-11 \
-  --model-name de_h5_s20_open_topk8
-```
-
-默认会自动创建并维护以下表：
-
-- `qlib_predictions`: 每日全量预测分数与排名
-- `qlib_orders`: 由 TopK 选股变化生成的 BUY/SELL 信号
-- `qlib_executions`: 券商回报成交记录
-- `qlib_reconcile`: 当日信号与实盘成交差异结果
-
-### 全自动定时运行（Cron）
-
-如果希望完全自动化，建议使用 **HATS 侧入口** 安装定时任务：
-
-```bash
-# 安装/更新 cron（工作日 19:40 跑预测+落库，20:10 跑成交回写+对账）
+# 安装/更新 cron
 cd /home/tanlu/myworkspace/HATS
 python scripts/daily_signal_scheduler.py install-cron \
-  --cron-user tanlu \
-  --model-name auto \
-  --topk 8 \
-  --n-drop 1
-```
+  --cron-user tanlu --topk 8 --n-drop 1
 
-```bash
-# 查看将要写入的 cron 配置
-cd /home/tanlu/myworkspace/HATS
+# 查看 cron 配置
 python scripts/daily_signal_scheduler.py print-cron
-```
 
-```bash
-# 移除自动任务
-cd /home/tanlu/myworkspace/HATS
+# 移除 cron
 python scripts/daily_signal_scheduler.py remove-cron --cron-user tanlu
 ```
 
-默认配置：
-
-- 时区：`Asia/Shanghai`
-- `model-name=auto`：自动读取当前模型文件名（例如 `lgbm_csi1000_20260130`）
-- 每日任务：`40 19 * * 1-5`（预测 -> DuckDB -> `orders_YYYYMMDD.csv`）
-- 对账任务：`10 20 * * 1-5`（读取 `HATS/data/executions/executions_YYYYMMDD.csv`，落库并对账）
-- 日志：`HATS/logs/auto_signal_daily.log` 与 `HATS/logs/auto_signal_reconcile.log`
-
-### 重训练流程 (双周六 08:00)
+### 手动运行
 
 ```bash
-# 检查是否需要重训练 (Rank IC < 0.03 或 距上次 > 14 天)
-python scripts/weekly_retrain.py
+cd /home/tanlu/myworkspace/HATS
+
+# 手动跑某日预测
+python scripts/daily_signal_scheduler.py run-daily --date 2026-02-13
+
+# 手动对账
+python scripts/daily_signal_scheduler.py run-reconcile --date 2026-02-13
+
+# 手动重训+部署
+python scripts/daily_signal_scheduler.py run-retrain-deploy --train-runner hats
 ```
 
-## 模型质量指标
+### 信号落库管道（底层工具）
 
-- **Rank IC**: 预测排名与实际收益排名的 Spearman 相关系数
-- **Rank IC IR**: Rank IC 均值 / Rank IC 标准差
-- **目标**: Rank IC > 0.03, IC IR > 0.3
+```bash
+# 预测结果落库
+python hats_workflows/signal_duckdb_pipeline.py \
+  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
+  ingest-pred --pred-csv .../pred_20260213.csv \
+  --model-name auto --topk 8 --n-drop 1
+
+# 导入券商成交
+python hats_workflows/signal_duckdb_pipeline.py \
+  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
+  import-exec --exec-csv .../executions_20260214.csv
+
+# 对账
+python hats_workflows/signal_duckdb_pipeline.py \
+  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
+  reconcile --trade-date 2026-02-14
+```
+
+## 关键发现
+
+1. **静态训练完全不可行**（Rank IC < 0.03），必须使用 Rolling Retrain
+2. **h=5（T+5 持仓）**是信号质量与收益的最佳平衡
+3. **step=20 最优**，更频繁重训反而过拟合
+4. **DoubleEnsemble 综合最优**，XGBoost 超额收益最高（16.5%）但回撤大
+5. **DDG-DA 需要 >=48GB 内存**，30GB 机器不可行
+6. **静态 `csi500` 有严重幸存者偏差**，历史区间成分数远少于 500，必须用 `csi500_dyn`
+7. **自定义 alpha 因子**（alpha_adx_trend 等）尚未整合到 Rolling 实验，Alpha158PlusCustom handler 已就绪
 
 ## 依赖
 
 - Python 3.10+
-- Qlib (本仓库)
-- LightGBM
+- Qlib（本仓库）
+- LightGBM, XGBoost
 - pandas, numpy, scipy
+- DuckDB（生产落库）
