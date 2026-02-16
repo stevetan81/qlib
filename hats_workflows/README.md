@@ -130,7 +130,7 @@ python hats_workflows/run_workflow.py --mode predict --date 2026-02-13
 │  22:00  daily_qlib_update.py    Qlib 二进制数据更新                │
 │  22:30  daily_signal_scheduler  run-daily   每日预测+落库(DE+LGBM)│
 │  23:00  daily_signal_scheduler  run-reconcile 对账                │
-│  每月首个周六 23:30  run-retrain-deploy  DoubleEnsemble 重训       │
+│  每月首个周六 23:30  run-retrain-deploy  DE+LGBM 重训+部署         │
 └──────────────────────────────────────────────────────────────────┘
          │
          ▼
@@ -143,8 +143,8 @@ python hats_workflows/run_workflow.py --mode predict --date 2026-02-13
 └──────────────────────────────────────────────────┘
          │
          ▼
-   HATS/models/qlib_deployed_current.pkl
-   (当前: doubleensemble_csi500_dyn_20260214)
+   HATS/models/qlib_deployed_current.pkl          (DE, 月度重训)
+   HATS/models/qlib_deployed_lgbm_csi500_dyn.pkl  (LGBM, 月度重训)
 ```
 
 ### Cron 管理
@@ -173,8 +173,9 @@ python scripts/daily_signal_scheduler.py run-daily --date 2026-02-13
 # 手动对账
 python scripts/daily_signal_scheduler.py run-reconcile --date 2026-02-13
 
-# 手动重训+部署
-python scripts/daily_signal_scheduler.py run-retrain-deploy --train-runner hats
+# 手动重训+部署（DE + LGBM）
+python scripts/daily_signal_scheduler.py run-retrain-deploy --train-runner hats \
+  --extra-train-configs configs/qlib_train_lgbm_csi500_dyn.yaml
 ```
 
 ### 信号落库管道（底层工具）
