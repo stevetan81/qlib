@@ -5,7 +5,7 @@
 """HATS Qlib 工作流入口。
 
 支持训练和预测两种模式：
-    - train: 使用 CSI1000 训练 LightGBM 模型
+    - train: 使用配置中的股票池训练 LightGBM 模型
     - predict: 对全市场进行预测
 
 用法:
@@ -38,7 +38,7 @@ MODELS_DIR = WORKFLOW_DIR / "models"
 
 def load_config(config_path: str) -> dict:
     """加载 YAML 配置文件。"""
-    with open(config_path, 'r') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 
@@ -123,7 +123,9 @@ def run_training(config_path: str = None):
 
         # 保存模型
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        model_name = f"lgbm_csi1000_{datetime.now().strftime('%Y%m%d')}.pkl"
+        market_name = str(config.get("market", "market")).lower()
+        market_name = "".join(character if character.isalnum() else "_" for character in market_name)
+        model_name = f"lgbm_{market_name}_{datetime.now().strftime('%Y%m%d')}.pkl"
         model_path = MODELS_DIR / model_name
 
         with open(model_path, 'wb') as f:
@@ -197,7 +199,7 @@ def run_prediction(config_path: str = None, pred_date: str = None):
 
     # 预测
     logger.info("Running prediction...")
-    pred = model.predict(dataset)
+    pred = model.predict(dataset, segment="predict")
 
     if pred.empty:
         logger.warning("No predictions generated")
@@ -206,7 +208,7 @@ def run_prediction(config_path: str = None, pred_date: str = None):
     # 格式化输出
     pred_df = pred.reset_index()
     pred_df.columns = ["datetime", "instrument", "score"]
-    pred_df["rank"] = pred_df["score"].rank(ascending=False, method="min").astype(int)
+    pred_df["rank"] = pred_df["score"].rank(ascending=False, method="first").astype(int)
     pred_df = pred_df.sort_values("rank")
 
     # 保存预测结果

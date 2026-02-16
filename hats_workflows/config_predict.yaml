@@ -2,7 +2,7 @@
 # 用于全市场股票的每日预测
 
 qlib_init:
-    provider_uri: "/home/tanlu/myworkspace/HATS/data/qlib_export/cn"
+    provider_uri: "/home/tanlu/myworkspace/HATS/data/qlib_export/cn/qlib_bin"
     region: cn
 
 # 预测范围：全市场
@@ -12,6 +12,8 @@ market: &market all
 data_handler_config: &data_handler_config
     start_time: 2020-01-01
     end_time: 2026-12-31
+    fit_start_time: 2020-01-01
+    fit_end_time: 2025-12-31
     instruments: *market
     infer_processors:
         - class: RobustZScoreNorm
@@ -21,8 +23,8 @@ data_handler_config: &data_handler_config
         - class: Fillna
           kwargs:
               fields_group: feature
-    # 预测时不需要 label
-    label: []
+    # 兼容部分 Qlib 版本: 需要提供 label 字段定义
+    label: ["Ref($close, -2) / Ref($close, -1) - 1"]
 
 # 数据集配置
 dataset_config: &dataset_config
@@ -36,8 +38,8 @@ dataset_config: &dataset_config
         segments:
             predict: [2026-01-01, 2026-12-31]
 
-# 模型路径 (使用 current 软链接指向最新模型)
-model_path: "/home/tanlu/myworkspace/qlib/hats_workflows/models/current"
+# 模型路径（部署到 HATS 目录）
+model_path: "/home/tanlu/myworkspace/HATS/models/qlib_deployed_current.pkl"
 
 # 输出配置
 output:

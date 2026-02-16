@@ -82,7 +82,7 @@ python run_workflow.py --mode predict --date 2026-01-30
 | 参数 | 说明 |
 |------|------|
 | `market` | 预测范围: all (全市场) |
-| `model_path` | 模型路径: models/current |
+| `model_path` | 模型路径: `HATS/models/qlib_deployed_current.pkl` |
 | `output.path` | 输出目录: HATS/data/predictions |
 
 ## 与 HATS 集成
@@ -104,6 +104,80 @@ python hats_workflows/run_workflow.py --mode predict
 cd /home/tanlu/myworkspace/HATS
 python scripts/qlib_import_predictions.py
 ```
+
+### DuckDB 信号落库与实盘对账
+
+如果你希望把每日信号直接放进 DuckDB，并分析“预测/信号”和“实盘成交”差异，可使用：
+
+```bash
+# 1) 预测结果落库，并生成次日开盘 orders_YYYYMMDD.csv
+python hats_workflows/signal_duckdb_pipeline.py \
+  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
+  ingest-pred \
+  --pred-csv /home/tanlu/myworkspace/HATS/data/predictions/pred_20260210.csv \
+  --model-name de_h5_s20_open_topk8 \
+  --topk 8 \
+  --n-drop 1
+```
+
+```bash
+# 2) 回写券商成交数据（CSV）到 DuckDB
+python hats_workflows/signal_duckdb_pipeline.py \
+  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
+  import-exec \
+  --exec-csv /path/to/broker_executions_20260211.csv \
+  --broker-name broker_a
+```
+
+```bash
+# 3) 对账：输出“计划信号 vs 实际成交”差异明细
+python hats_workflows/signal_duckdb_pipeline.py \
+  --db-path /home/tanlu/myworkspace/HATS/data/cn/raw/tushare.duckdb \
+  reconcile \
+  --trade-date 2026-02-11 \
+  --model-name de_h5_s20_open_topk8
+```
+
+默认会自动创建并维护以下表：
+
+- `qlib_predictions`: 每日全量预测分数与排名
+- `qlib_orders`: 由 TopK 选股变化生成的 BUY/SELL 信号
+- `qlib_executions`: 券商回报成交记录
+- `qlib_reconcile`: 当日信号与实盘成交差异结果
+
+### 全自动定时运行（Cron）
+
+如果希望完全自动化，建议使用 **HATS 侧入口** 安装定时任务：
+
+```bash
+# 安装/更新 cron（工作日 19:40 跑预测+落库，20:10 跑成交回写+对账）
+cd /home/tanlu/myworkspace/HATS
+python scripts/daily_signal_scheduler.py install-cron \
+  --cron-user tanlu \
+  --model-name auto \
+  --topk 8 \
+  --n-drop 1
+```
+
+```bash
+# 查看将要写入的 cron 配置
+cd /home/tanlu/myworkspace/HATS
+python scripts/daily_signal_scheduler.py print-cron
+```
+
+```bash
+# 移除自动任务
+cd /home/tanlu/myworkspace/HATS
+python scripts/daily_signal_scheduler.py remove-cron --cron-user tanlu
+```
+
+默认配置：
+
+- 时区：`Asia/Shanghai`
+- `model-name=auto`：自动读取当前模型文件名（例如 `lgbm_csi1000_20260130`）
+- 每日任务：`40 19 * * 1-5`（预测 -> DuckDB -> `orders_YYYYMMDD.csv`）
+- 对账任务：`10 20 * * 1-5`（读取 `HATS/data/executions/executions_YYYYMMDD.csv`，落库并对账）
+- 日志：`HATS/logs/auto_signal_daily.log` 与 `HATS/logs/auto_signal_reconcile.log`
 
 ### 重训练流程 (双周六 08:00)
 
