@@ -49,6 +49,7 @@ make build
 - **provider_uri** must point to `.../qlib_bin/` (not `.../cn/`)
 - **Always use `csi500_dyn`** (dynamic constituents) instead of static `csi500` — static pool has severe survivorship bias (only ~329-411 stocks in historical periods vs expected 500)
 - DDG-DA requires >=48GB RAM; not viable on 30GB machines
+- **`.ipynb` files are gitignored** — notebooks won't be tracked; `hats_workflows/models/` is also gitignored (binary model artifacts)
 
 ## Data
 
@@ -71,7 +72,7 @@ Upstream Microsoft Qlib framework. Key modules:
 - `qlib/contrib/strategy/` — portfolio strategies including `TopkDropoutStrategy`
 - `qlib/workflow/` — experiment workflow orchestration, record templates (`record_temp.py`)
 - `qlib/backtest/` — backtesting engine
-- `qlib/cli/run.py` — CLI entry point (`qrun` command)
+- `qlib/cli/run.py` — CLI entry point (`qrun` command, runs a YAML config end-to-end: `qrun path/to/config.yaml`)
 
 ### HATS Workflows (`hats_workflows/`)
 
@@ -79,15 +80,17 @@ Research and production overlay. Key files:
 
 | File | Purpose |
 |------|---------|
-| `rolling_benchmark.py` | Rolling retrain entry point (wraps `qlib.contrib.rolling.base.Rolling`) |
+| `rolling_benchmark.py` | Rolling retrain entry point (wraps `qlib.contrib.rolling.base.Rolling`); uses `fire.Fire()` CLI |
 | `run_workflow.py` | Static train/predict entry |
 | `custom_handler.py` | `Alpha158PlusCustom` — extends Alpha158 with 6 custom factors (164 total) |
 | `signal_duckdb_pipeline.py` | Signal ingestion, order generation, broker reconciliation via DuckDB |
+| `auto_signal_scheduler.py` | Daily signal cron automation (crontab install/remove, signal + reconcile) |
 | `topk_grid_search.py` | TopK parameter grid search |
 | `ddgda_workflow.py` | DDG-DA meta-learning entry (needs >=48GB) |
 | `EXPERIMENT_LOG.md` | Complete experiment log (all configs + results across phases) |
 | `workflow_config_rolling_*_dyn.yaml` | Rolling configs with dynamic pool (recommended) |
-| `configs/` | Phase 1/2 experiment configs |
+| `workflow_config_rolling_*_dyn_deploy.yaml` | Deploy configs (production model retrain + signal generation) |
+| `configs/` | Phase 1 (`phase1_lgbm_label_t*.yaml`) and Phase 2 (`phase2_rr_de_dyn_deploy*.yaml`) experiment configs |
 
 ### Config YAML Structure
 
