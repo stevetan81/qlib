@@ -121,26 +121,26 @@ python hats_workflows/run_workflow.py --mode predict --date 2026-02-13
 ## 生产部署架构
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Cron 定时任务（Asia/Shanghai 时区）                           │
-├──────────────────────────────────────────────────────────────┤
-│  19:00  daily_sync.py          DuckDB 行情同步               │
-│  20:30  daily_sync.py          筹码绩效同步                   │
-│  21:30  daily_sync.py          技术因子同步                   │
-│  22:00  daily_qlib_update.py   Qlib 二进制数据更新            │
-│  19:40  daily_signal_scheduler.py run-daily    每日预测+落库  │
-│  20:10  daily_signal_scheduler.py run-reconcile 对账          │
-│  每月首个周六 20:30  run-retrain-deploy  DoubleEnsemble 重训  │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Cron 定时任务（Asia/Shanghai 时区）                               │
+├──────────────────────────────────────────────────────────────────┤
+│  19:00  daily_sync.py           DuckDB 行情同步                   │
+│  20:30  daily_sync.py           筹码绩效同步                       │
+│  21:30  daily_sync.py           技术因子同步                       │
+│  22:00  daily_qlib_update.py    Qlib 二进制数据更新                │
+│  22:30  daily_signal_scheduler  run-daily   每日预测+落库(DE+LGBM)│
+│  23:00  daily_signal_scheduler  run-reconcile 对账                │
+│  每月首个周六 23:30  run-retrain-deploy  DoubleEnsemble 重训       │
+└──────────────────────────────────────────────────────────────────┘
          │
          ▼
-┌─────────────────────────────────────────┐
-│  DuckDB（HATS/data/cn/raw/tushare.duckdb）│
-│  ├── qlib_predictions  每日预测分数       │
-│  ├── qlib_orders       BUY/SELL 信号      │
-│  ├── qlib_executions   券商成交回报       │
-│  └── qlib_reconcile    信号 vs 成交对账   │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  DuckDB（HATS/data/cn/raw/tushare.duckdb）          │
+│  ├── qlib_predictions  每日预测分数（DE + LGBM）    │
+│  ├── qlib_orders       BUY/SELL 信号（DE + LGBM）   │
+│  ├── qlib_executions   券商成交回报                 │
+│  └── qlib_reconcile    信号 vs 成交对账             │
+└──────────────────────────────────────────────────┘
          │
          ▼
    HATS/models/qlib_deployed_current.pkl
