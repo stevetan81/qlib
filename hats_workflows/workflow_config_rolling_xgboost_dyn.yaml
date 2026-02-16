@@ -1,0 +1,75 @@
+# HATS Rolling Retrain 配置（Restart）— CSI500 动态成分池 + XGBoost + Alpha158
+# 用于 Phase 2 滚动训练实验（market=csi500_dyn）
+
+qlib_init:
+    provider_uri: "/home/tanlu/myworkspace/HATS/data/qlib_export/cn/qlib_bin"
+    region: cn
+
+market: &market csi500_dyn
+benchmark: &benchmark SH000905
+
+data_handler_config: &data_handler_config
+    start_time: 2015-01-01
+    end_time: 2026-01-30
+    fit_start_time: 2015-01-01
+    fit_end_time: 2022-12-31
+    instruments: *market
+
+port_analysis_config: &port_analysis_config
+    strategy:
+        class: TopkDropoutStrategy
+        module_path: qlib.contrib.strategy
+        kwargs:
+            signal: <PRED>
+            topk: 50
+            n_drop: 5
+    backtest:
+        start_time: 2025-01-01
+        end_time: 2026-01-30
+        account: 100000000
+        benchmark: *benchmark
+        exchange_kwargs:
+            limit_threshold: 0.095
+            deal_price: close
+            open_cost: 0.0005
+            close_cost: 0.0015
+            min_cost: 5
+
+task:
+    model:
+        class: XGBModel
+        module_path: qlib.contrib.model.xgboost
+        kwargs:
+            colsample_bytree: 0.8879
+            eta: 0.2
+            max_depth: 8
+            subsample: 0.8789
+            nthread: 20
+    dataset:
+        class: DatasetH
+        module_path: qlib.data.dataset
+        kwargs:
+            handler:
+                class: Alpha158
+                module_path: qlib.contrib.data.handler
+                kwargs: *data_handler_config
+            segments:
+                train: [2015-01-01, 2022-12-31]
+                valid: [2023-01-01, 2024-12-31]
+                test: [2025-01-01, 2026-01-30]
+    record:
+        - class: SignalRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+              model: <MODEL>
+              dataset: <DATASET>
+        - class: SigAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+              ana_long_short: false
+              ann_scaler: 252
+        - class: PortAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+              config: *port_analysis_config
+

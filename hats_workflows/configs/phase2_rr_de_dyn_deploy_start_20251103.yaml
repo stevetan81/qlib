@@ -1,0 +1,99 @@
+# CSI500 动态池 Rolling（DoubleEnsemble，部署口径）— 评估 step=10（截取后段窗口）
+#
+# 目的：
+# - 评估更频繁重训（step=10）在“贴近实战口径（deal_price=open, acct=200k, topk=8,n_drop=1）”下的收益变化
+# - 为了把训练耗时控制在 ~2 小时量级，本配置把 test 段起点移动到 2025-11-03
+#
+# 说明：
+# - 该时间切分不是“拍脑袋截断”，而是按 RollingGen 的机制把原始分段整体平移（相当于从 step=10 的第 21 个 rolling task 开始跑）
+# - horizon 仍由 rolling_benchmark.py 的 --horizon 覆盖（默认 close-to-close 标签）
+#
+# 对应的 step=10 起始点计算（交易日对齐）见：hats_workflows/EXPERIMENT_LOG.md（Phase 5/7）
+
+qlib_init:
+    provider_uri: "/home/tanlu/myworkspace/HATS/data/qlib_export/cn/qlib_bin"
+    region: cn
+
+market: &market csi500_dyn
+benchmark: &benchmark SH000905
+
+data_handler_config: &data_handler_config
+    start_time: 2015-01-01
+    end_time: 2026-01-30
+    fit_start_time: 2015-01-01
+    fit_end_time: 2022-12-31
+    instruments: *market
+
+port_analysis_config: &port_analysis_config
+    strategy:
+        class: TopkDropoutStrategy
+        module_path: qlib.contrib.strategy
+        kwargs:
+            signal: <PRED>
+            topk: 8
+            n_drop: 1
+            forbid_all_trade_at_limit: false
+    backtest:
+        start_time: 2025-11-03
+        end_time: 2026-01-30
+        account: 200000
+        benchmark: *benchmark
+        exchange_kwargs:
+            limit_threshold: 0.095
+            deal_price: open
+            open_cost: 0.0005
+            close_cost: 0.0015
+            min_cost: 5
+
+task:
+    model:
+        class: DEnsembleModel
+        module_path: qlib.contrib.model.double_ensemble
+        kwargs:
+            base_model: gbm
+            loss: mse
+            num_models: 6
+            enable_sr: true
+            enable_fs: true
+            alpha1: 1
+            alpha2: 1
+            bins_sr: 10
+            bins_fs: 5
+            decay: 0.5
+            epochs: 28
+            colsample_bytree: 0.8879
+            learning_rate: 0.2
+            subsample: 0.8789
+            lambda_l1: 205.6999
+            lambda_l2: 580.9768
+            max_depth: 8
+            num_leaves: 210
+            num_threads: 20
+    dataset:
+        class: DatasetH
+        module_path: qlib.data.dataset
+        kwargs:
+            handler:
+                class: Alpha158
+                module_path: qlib.contrib.data.handler
+                kwargs: *data_handler_config
+            segments:
+                train: [2015-01-01, 2023-11-01]
+                valid: [2023-11-02, 2025-10-31]
+                test: [2025-11-03, 2026-01-30]
+    record:
+        - class: SignalRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+              model: <MODEL>
+              dataset: <DATASET>
+        - class: SigAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+              ana_long_short: false
+              ann_scaler: 252
+        - class: PortAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+              config: *port_analysis_config
+

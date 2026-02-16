@@ -1,0 +1,84 @@
+# HATS CSI1000 Benchmark 测试配置
+# 与 Qlib 官方 benchmarks/LightGBM 配置对齐
+# 用于评估模型性能（IC、ICIR、收益、夏普比等）
+
+qlib_init:
+    provider_uri: "/home/tanlu/myworkspace/HATS/data/qlib_export/cn"
+    region: cn
+
+market: &market csi1000
+benchmark: &benchmark SH000852  # CSI1000 指数
+
+data_handler_config: &data_handler_config
+    start_time: 2020-01-01
+    end_time: 2026-01-26
+    fit_start_time: 2020-01-01
+    fit_end_time: 2024-06-30
+    instruments: *market
+
+# 回测配置
+port_analysis_config: &port_analysis_config
+    strategy:
+        class: TopkDropoutStrategy
+        module_path: qlib.contrib.strategy
+        kwargs:
+            signal: <PRED>
+            topk: 50          # 持仓 50 只
+            n_drop: 5         # 每天换 5 只
+    backtest:
+        start_time: 2025-01-01
+        end_time: 2026-01-26
+        account: 100000000    # 1 亿本金
+        benchmark: *benchmark
+        exchange_kwargs:
+            limit_threshold: 0.095   # 涨跌停限制
+            deal_price: close
+            open_cost: 0.0005        # 开仓成本 0.05%
+            close_cost: 0.0015       # 平仓成本 0.15%
+            min_cost: 5
+
+task:
+    model:
+        class: LGBModel
+        module_path: qlib.contrib.model.gbdt
+        kwargs:
+            loss: mse
+            colsample_bytree: 0.8879
+            learning_rate: 0.0421
+            subsample: 0.8789
+            lambda_l1: 205.6999
+            lambda_l2: 580.9768
+            max_depth: 8
+            num_leaves: 210
+            num_threads: 20
+            early_stopping_rounds: 50
+            num_boost_round: 1000
+
+    dataset:
+        class: DatasetH
+        module_path: qlib.data.dataset
+        kwargs:
+            handler:
+                class: Alpha158
+                module_path: qlib.contrib.data.handler
+                kwargs: *data_handler_config
+            segments:
+                train: [2020-01-01, 2023-12-31]
+                valid: [2024-01-01, 2024-06-30]
+                test: [2024-07-01, 2026-01-26]
+
+    record:
+        - class: SignalRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+            model: <MODEL>
+            dataset: <DATASET>
+        - class: SigAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+            ana_long_short: False
+            ann_scaler: 252
+        - class: PortAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+            config: *port_analysis_config

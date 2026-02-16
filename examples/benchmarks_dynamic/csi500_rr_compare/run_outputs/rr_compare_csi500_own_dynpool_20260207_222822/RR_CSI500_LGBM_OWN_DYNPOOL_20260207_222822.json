@@ -1,0 +1,33 @@
+{
+  "exp_name": "RR_CSI500_LGBM_OWN_DYNPOOL_20260207_222822",
+  "provider_uri": "/tmp/qlib_own_dyn_csi500",
+  "conf_path": "/tmp/rr_compare_csi500_own_dynpool_20260207_222822/runs/own_dyn_lgbm/config.yaml",
+  "recorder_id": "440340b091cc472f9ee86389a74f58d2",
+  "metrics": {
+    "1day.excess_return_with_cost.information_ratio": 1.9646006872127897,
+    "1day.excess_return_without_cost.annualized_return": 0.174207040444394,
+    "Long-Short Ann Return": 2.2083702087402344,
+    "Long-Short Ann Sharpe": 8.469229698181152,
+    "1day.ffr": 1.0,
+    "1day.excess_return_without_cost.std": 0.004392912834304633,
+    "1day.pos": 0.0,
+    "1day.excess_return_without_cost.information_ratio": 2.5705416097320173,
+    "Long-Avg Ann Sharpe": 1.1229583024978638,
+    "1day.excess_return_without_cost.max_drawdown": -0.1438513719026009,
+    "1day.pa": 0.0,
+    "Rank IC": 0.09701290189094819,
+    "1day.excess_return_with_cost.annualized_return": 0.1332169128146549,
+    "1day.excess_return_with_cost.std": 0.004395381691996244,
+    "1day.excess_return_with_cost.mean": 0.0005597349277926677,
+    "Long-Avg Ann Return": 1.2261420488357544,
+    "1day.excess_return_without_cost.mean": 0.0007319623548083782,
+    "1day.excess_return_with_cost.max_drawdown": -0.15570771959678814,
+    "IC": 0.0751836772708087,
+    "ICIR": 0.6557800900993201,
+    "Rank ICIR": 0.8476937594275797
+  },
+  "params": {
+    "exp_name": "rolling_models_20260207223536",
+    "cmd-sys.argv": "-"
+  }
+}
